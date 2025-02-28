@@ -31,7 +31,7 @@ def get_brun_pore_radius( delta_T, freeze_melt = 'freeze', ignore_lower_border =
     
     return pore_radius
 
-def load_multiple_experiments(measure_segments, thaw_temp_range, verbose=False):
+def load_multiple_experiments(measure_segments, thaw_temp_range, T_range, verbose=False):
     root = tk.Tk()
     root.withdraw()
     root.wm_attributes('-topmost', 1) # Fenster immer im Vordergrund
@@ -50,7 +50,7 @@ def load_multiple_experiments(measure_segments, thaw_temp_range, verbose=False):
     for filename in fileList:
         print()
         print(filename)
-        experiment = ltdsc_measurement(directory + filename, measure_segments, thaw_temp_range, ignore_first_n_min = 1.25, verbose=verbose )
+        experiment = ltdsc_measurement(directory + filename, measure_segments, thaw_temp_range, ignore_first_n_min = 1.25, T_range = T_range, verbose=verbose )
         # sort by material
         if not experiment.header['MATERIAL'] in materials.keys():
             materials[experiment.header['MATERIAL']] = {}
@@ -60,7 +60,9 @@ def load_multiple_experiments(measure_segments, thaw_temp_range, verbose=False):
 
 def process_ice_mass_dev(materials, specimen_ages):
     ice_list_total = []
+    ice_list_vol_total = []
     ice_list_mean = []
+    ice_list_vol_mean = []
     # iterate through all materials
     for mat, material in materials.items():
         # iterate through the possible specimen ages
@@ -69,21 +71,30 @@ def process_ice_mass_dev(materials, specimen_ages):
             pores_a_mean = []
             pores_b_mean = []
             pores_c_mean = []
+            pores_a_vol_mean = []
+            pores_b_vol_mean = []
+            pores_c_vol_mean = []
             for key, experiment in material.items():
                 if '_'+age in key:
-                    pores_a_mean.append(experiment.ice_mass[1]-experiment.ice_mass[0])
-                    pores_b_mean.append(experiment.ice_mass[0])
-                    pores_c_mean.append(experiment.ice_mass[1])
-                    pores_a = experiment.ice_mass[1]-experiment.ice_mass[0]
-                    pores_b = experiment.ice_mass[0]
-                    pores_c = experiment.ice_mass[1]
+                    pores_a_mean.append((experiment.ice_mass[1]-experiment.ice_mass[0])*1000)
+                    pores_b_mean.append(experiment.ice_mass[0]*1000)
+                    pores_c_mean.append(experiment.ice_mass[1]*1000)
                     ice_list_total.append([mat, age, pores_a_mean[-1], pores_b_mean[-1], pores_c_mean[-1]])
-                    #print(key, experiment.ice_mass)
-            if len(pores_a_mean)> 0: ice_list_mean.append([mat, age, np.mean(pores_a_mean), np.mean(pores_b_mean), np.mean(pores_c_mean), np.std(pores_a_mean), np.std(pores_b_mean), np.std(pores_c_mean)])
+                    pores_a_vol_mean.append((experiment.ice_vol[1]-experiment.ice_vol[0])*1000)
+                    pores_b_vol_mean.append(experiment.ice_vol[0]*1000)
+                    pores_c_vol_mean.append(experiment.ice_vol[1]*1000)
+                    ice_list_vol_total.append([mat, age, pores_a_vol_mean[-1], pores_b_vol_mean[-1], pores_c_vol_mean[-1]])
+                    
+            if len(pores_a_mean)> 0: 
+                ice_list_mean.append([mat, age, np.mean(pores_a_mean), np.mean(pores_b_mean), np.mean(pores_c_mean), np.std(pores_a_mean), np.std(pores_b_mean), np.std(pores_c_mean)])
+                ice_list_vol_mean.append([mat, age, np.mean(pores_a_vol_mean), np.mean(pores_b_vol_mean), np.mean(pores_c_vol_mean), np.std(pores_a_vol_mean), np.std(pores_b_vol_mean), np.std(pores_c_vol_mean)])
 
-    ice_dataframe      = pd.DataFrame(ice_list_total, columns=['material', 'age', 'pores_a', 'pores_b', 'pores_c'])
-    ice_stat_dataframe = pd.DataFrame(ice_list_mean, columns=['material', 'age', 'pores_a_mean', 'pores_b_mean', 'pores_c_mean', 'pores_a_std', 'pores_b_std', 'pores_c_std'])
-    return ice_dataframe, ice_stat_dataframe
+    ice_mass_df      = pd.DataFrame(ice_list_total, columns=['material', 'age', 'pores_a', 'pores_b', 'pores_c'])
+    ice_mass_stat_df = pd.DataFrame(ice_list_mean, columns=['material', 'age', 'pores_a_mean', 'pores_b_mean', 'pores_c_mean', 'pores_a_std', 'pores_b_std', 'pores_c_std'])
+    ice_vol_df      = pd.DataFrame(ice_list_vol_total, columns=['material', 'age', 'pores_a', 'pores_b', 'pores_c'])
+    ice_vol_stat_df = pd.DataFrame(ice_list_vol_mean, columns=['material', 'age', 'pores_a_mean', 'pores_b_mean', 'pores_c_mean', 'pores_a_std', 'pores_b_std', 'pores_c_std'])
+    
+    return ice_mass_df, ice_mass_stat_df, ice_vol_df, ice_vol_stat_df
 
 def plot_ice_mass_development(mat, ice_stat_dataframe, directory):
     df_s = ice_stat_dataframe[ice_stat_dataframe['material']== mat]
@@ -100,16 +111,40 @@ def plot_ice_mass_development(mat, ice_stat_dataframe, directory):
     #rects3 = ax.bar(x + width*2/3, df_s['pores_c_mean'], width, label='total pores')
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
-    ax.set_ylabel('ice mass cumsum in g/g')
+    ax.set_ylabel('ice mass cumsum in mg/g')
     ax.set_xlabel('')
     ax.set_title('ice mass development of {}'.format(mat))
-    ax.set_ylim(0,0.3)
+    ax.set_ylim(0,300)
     ax.set_xticks(x)
     ax.set_xticklabels(df_s['age'])
     plt.tight_layout()
     plt.savefig(directory + '{}_ice_mass_dev.svg'.format(mat))
     plt.show()
 
+def plot_ice_vol_development(mat, ice_stat_dataframe, directory):
+    df_s = ice_stat_dataframe[ice_stat_dataframe['material']== mat]
+    df_s[["age","pores_a_mean", "pores_b_mean", "pores_c_mean", "pores_a_std", "pores_b_std", "pores_c_std"]].to_csv(directory + '{}_ice_vol_dev.csv'.format(mat),index=False)
+
+    x = np.arange(len(df_s))  # the label locations
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    df_s.plot(x="age", y=["pores_a_mean", "pores_b_mean", "pores_c_mean"], kind="bar", ax=ax, capsize=3, yerr=df_s[["pores_a_std", "pores_b_std", "pores_c_std"]].T.values)#, yerr=["pores_a_std", "pores_b_std", "pores_c_std"]
+    
+    ax.legend(["gel pores", "capillary pores", "total pores"])
+    #rects1 = ax.bar(x - width/3, df_s['pores_a_mean'], width, label='gel pores')
+    #rects2 = ax.bar(x + width/3, df_s['pores_b_mean'], width, label='capillary pores')
+    #rects3 = ax.bar(x + width*2/3, df_s['pores_c_mean'], width, label='total pores')
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_ylabel('ice volume cumsum in µL/g')
+    ax.set_xlabel('')
+    ax.set_title('ice volume development of {}'.format(mat))
+    ax.set_ylim(0,400)
+    ax.set_xticks(x)
+    ax.set_xticklabels(df_s['age'])
+    plt.tight_layout()
+    plt.savefig(directory + '{}_ice_vol_dev.svg'.format(mat))
+    plt.show()
 
 class ltdsc_measurement:
     n_lines  = 100
@@ -126,7 +161,7 @@ class ltdsc_measurement:
     measure_segments = []
     thaw_temp_range  = []
     values_per_s     = 5.0
-    T_range          = [[0,0],[0,0]]
+    T_range          = [[[0,0],[0,0]]]
     
     def guess_encoding( self ):
         with open(self.filepath, 'rb') as input_file:
@@ -273,7 +308,38 @@ class ltdsc_measurement:
         
         return model
     
-    def auto_select_baseline( self, df_s, measure_segment ):
+    def auto_select_baseline( self, df_s, measure_segment, limit_temp_padding = 0 ):
+        
+        values_per_s   = self.get_values_per_s( df_s )
+        smoothing_window = int(30*values_per_s)
+        # reduce noise and find significant signal changes
+        df_s['DSC/(mW/mg) diff'] = df_s['DSC/(mW/mg)'].rolling(window=smoothing_window).mean().diff()
+        df_s['DSC/(mW/mg) smooth'] = df_s['DSC/(mW/mg) diff'].rolling(window=smoothing_window).mean()
+        
+        qry = "`DSC/(mW/mg) smooth` < 0.000004 and `DSC/(mW/mg) smooth` > -0.000001" #and `DSC/(mW/mg)` < 0.1
+        if limit_temp_padding > 0: 
+            qry += " and (`Temp./°C` > {} and `Temp./°C` < {} or `Temp./°C` > {} and `Temp./°C` < {})".format(
+                    df_s['Temp./°C'].min(),
+                    df_s['Temp./°C'].min() + limit_temp_padding,
+                    df_s['Temp./°C'].max(),
+                    df_s['Temp./°C'].max() - limit_temp_padding
+                )
+        
+        # Find the first index where the smooth value is below the threshold
+        valid_index = df_s[(df_s['DSC/(mW/mg) smooth'] > 0.000004) | (df_s['DSC/(mW/mg) smooth'] < -0.000004)].index
+        #print(valid_index[0], valid_index[-1])
+        #print(df_s.index[0], df_s.index[-1])
+        
+        #df_s2 = df_s.loc[:valid_index[0]].copy()
+        df_s2 = pd.concat([ df_s.loc[:valid_index[0]].copy(), df_s.loc[valid_index[-1]:].copy() ])
+        #print(df_s2)
+        
+        #print(qry)
+        df_s2 = df_s.query(qry)
+        
+        return df_s2, self.fit_baseline( df_s2, measure_segment )
+    
+    def auto_select_baseline_old( self, df_s, measure_segment ):
         
         values_per_s   = self.get_values_per_s( df_s )
         df_s['DSC/(mW/mg) diff'] = df_s['DSC/(mW/mg)'].rolling(window=int(30*values_per_s)).mean().diff()
@@ -282,41 +348,50 @@ class ltdsc_measurement:
         
         return df_s2, self.fit_baseline( df_s2, measure_segment )
     
-    def manual_select_baseline( self, df_s, measure_segment ):
+    def manual_select_baseline( self, df_s, k ): # k: id of the measure_segment
         temp_padding = 2 #Kelvin
         temp_range = 2 #Kelvin
-        if self.T_range[0][0] == 0 and self.T_range[0][1] == 0:
-            self.T_range[0][0] = df_s['Temp./°C'].min()+temp_padding
-            self.T_range[0][1] = df_s['Temp./°C'].min()+temp_padding+temp_range
+        # automatically set temperature range, if nothing is set
+        if self.T_range[0][0][0] == 0 and self.T_range[0][0][1] == 0:
+            self.T_range[0][0][0] = df_s['Temp./°C'].min()+temp_padding
+            self.T_range[0][0][1] = df_s['Temp./°C'].min()+temp_padding+temp_range
             
-            self.T_range[1][0] = df_s['Temp./°C'].max()-temp_padding-temp_range
-            self.T_range[1][1] = df_s['Temp./°C'].max()-temp_padding
+            self.T_range[0][1][0] = df_s['Temp./°C'].max()-temp_padding-temp_range
+            self.T_range[0][1][1] = df_s['Temp./°C'].max()-temp_padding
+        if len(self.T_range) < len(self.measure_segments)== 1:
+            for i in range(1, len(self.measure_segments )):
+                self.T_range.append(self.T_range[0])
         
-        df_s2 = df_s[(df_s['Temp./°C'] > self.T_range[0][0]) & (df_s['Temp./°C'] < self.T_range[0][1]) | (df_s['Temp./°C'] > self.T_range[1][0]) & (df_s['Temp./°C'] < self.T_range[1][1])].copy()
+        df_s2 = df_s[(df_s['Temp./°C'] > self.T_range[k][0][0]) & (df_s['Temp./°C'] < self.T_range[k][0][1]) | (df_s['Temp./°C'] > self.T_range[k][1][0]) & (df_s['Temp./°C'] < self.T_range[k][1][1])].copy()
 
-        return df_s2, self.fit_baseline( df_s2, measure_segment )
+        return df_s2, self.fit_baseline( df_s2, self.measure_segments[k] )
         
     def base_line_correction( self, ignore_first_n_min = 1.25, plot = False ):
-        if plot: fig, ax = plt.subplots(ncols=4, figsize=(20, 5))
+        if plot: fig, ax = plt.subplots(ncols=3, figsize=(15, 5))
         
         max_time = 0
+        max_temp = -300
+        min_temp = 300
         for k, measure_segment in enumerate(self.measure_segments):
             df_s = self.raw_data[(self.raw_data['Segment'] == measure_segment[1])].copy()
             df_s['Time/min'] -= df_s['Time/min'].min()
             max_time = max(max_time, df_s['Time/min'].max())
+            max_temp = max(max_temp, df_s['Temp./°C'].max())
+            min_temp = min(min_temp, df_s['Temp./°C'].min())
             # plot raw data
             if plot: 
+                df_s.plot(x='Temp./°C',  y='DSC/(mW/mg)', label="Segment {} raw".format(measure_segment[1]), ax=ax[0])
                 df_s.plot(x='Time/min', y='DSC/(mW/mg)', label="Segment {} raw".format(measure_segment[1]), ax=ax[1])
-                df_s.plot(x='Time/min', y='DSC/(mW/mg)', label="Segment {} raw".format(measure_segment[1]), ax=ax[2])
+                #df_s[df_s['Time/min'] <= ignore_first_n_min].plot(x='Time/min', y='DSC/(mW/mg)', label="Segment {} cropped".format(measure_segment[1]), ax=ax[2])
             
             df_s = df_s[df_s['Time/min'] >= ignore_first_n_min].copy()
             
-            df_s2, model = self.auto_select_baseline( df_s, measure_segment )
-            df_s3, model_2 = self.manual_select_baseline( df_s, measure_segment )
+            #df_s2, model = self.auto_select_baseline( df_s, measure_segment )
+            df_s3, model_2 = self.manual_select_baseline( df_s, k )
             
             # correct the DSC curves by substracting the baseline
-            df_s['DSC/(mW/mg) corr'] = df_s['DSC/(mW/mg)']-model.predict(df_s[['Time/min']])
-            df_s['DSC/(mW/mg) man_corr'] = df_s['DSC/(mW/mg)']-model_2.predict(df_s[['Time/min']])
+            #df_s['DSC/(mW/mg) corr'] = df_s['DSC/(mW/mg)']-model.predict(df_s[['Time/min']])
+            df_s['DSC/(mW/mg) corr'] = df_s['DSC/(mW/mg)']-model_2.predict(df_s[['Time/min']])
             
             # calculate melting enthalpy for every point
             T_melt_ice = 273.15
@@ -328,6 +403,9 @@ class ltdsc_measurement:
             # Diss Matthias, Seite 62
             df_s['melting enthalpy/(J/g)'] = 334.1 + 2.119*delta_T - 0.00783*delta_T**2 
 
+            # Müller, Dissertation, Seite 62, eq XIX
+            df_s['ice density/(g/ccm)'] = 0.9167 - 2.053 * 0.0001 * delta_T - 1.357 * 0.000001 * delta_T**2
+            
             self.thaw_data.append(df_s)
             #print( os.path.dirname(self.filepath) + os.sep + '{}_melt_segment_{}.csv'.format( self.filename, measure_segment[1] ) )
             
@@ -335,26 +413,45 @@ class ltdsc_measurement:
             
             # plot some curves
             if plot: 
-                df_s2.plot(x='Time/min', y='DSC/(mW/mg) smooth',     label="Segment {}".format(        measure_segment[1]), ax=ax[0])
-                df_s2.plot(x='Temp./K',  y='DSC/(mW/mg)',            label="Segment {} to-fit (auto)".format( measure_segment[1]), ax=ax[1])
-                df_s3.plot(x='Temp./K',  y='DSC/(mW/mg)',            label="Segment {} to-fit (manual)".format( measure_segment[1]), ax=ax[1])
-                ax[1].plot(df_s[['Time/min']], model.predict(df_s[['Time/min']]), color='black', linewidth=1)
-                ax[1].plot(df_s[['Time/min']], model_2.predict(df_s[['Time/min']]), color='grey', linewidth=1)
-                df_s.plot( x='Time/min', y='DSC/(mW/mg) corr',       label="Segment {} corr.".format(  measure_segment[1]), ax=ax[2])
-                df_s.plot( x='Time/min', y='melting enthalpy/(J/g)', label="Segment {}".format(        measure_segment[1]), ax=ax[3])
+                #df_s2.plot(x='Time/min', y='DSC/(mW/mg) smooth',     label="Segment {}".format(        measure_segment[1]), ax=ax[0])
+                #df_s3.plot(x='Time/min', y='DSC/(mW/mg) smooth',     label="Segment {}*".format(        measure_segment[1]), ax=ax[0])
+                #df_s2.plot(x='Temp./K',  y='DSC/(mW/mg)',            label="Segment {} to-fit (auto)".format( measure_segment[1]), ax=ax[1])
+                #df_s3.plot(x='Temp./°C',  y='DSC/(mW/mg)',            label="Segment {} to-fit (manual)".format( measure_segment[1]), ax=ax[0])
+                #x[1].plot(df_s[['Temp./K']], model.predict(df_s[['Time/min']]), color='black', linewidth=1)
+                ax[0].add_patch(patches.Rectangle(
+                                    (self.T_range[k][0][0], 0), # (x,y)
+                                    self.T_range[k][0][1]-self.T_range[k][0][0],              # width
+                                    0.3,   # height
+                                    alpha = 0.25,
+                                    color='green'))
+                ax[0].add_patch(patches.Rectangle(
+                                    (self.T_range[k][1][0], 0), # (x,y)
+                                    self.T_range[k][1][1]-self.T_range[k][1][0],              # width
+                                    0.3,   # height
+                                    alpha = 0.25,
+                                    color='green'))
+                
+                ax[0].text(self.T_range[k][0][1]+1, 0.2, "{} to {} °C".format(self.T_range[k][0][1], self.T_range[k][0][0]), rotation=90, horizontalalignment='left') 
+                ax[0].text(self.T_range[k][1][0], 0.2, "{} to {} °C".format(self.T_range[k][1][1], self.T_range[k][1][0]), rotation=90, horizontalalignment='right') 
+                
+                ax[0].plot(df_s[['Temp./°C']], model_2.predict(df_s[['Time/min']]), color='grey', linewidth=1, label="Segment {} fit".format( measure_segment[1]))
+                df_s.plot( x='Time/min', y='DSC/(mW/mg) corr',       label="Segment {} corr.".format(  measure_segment[1]), ax=ax[1])
+                df_s.plot( x='Time/min', y='melting enthalpy/(J/g)', label="Segment {}".format(        measure_segment[1]), ax=ax[2])
         
         if plot:
-            ax[0].set_title('diff+smooth')
-            ax[1].set_title('baseline correction')
-            ax[1].set_ylim(0.0,0.2)
-            ax[2].set_title('corrected raw data')
-            ax[3].set_title('melting enthalpy')
+            #ax[0].set_title('diff+smooth')
+            ax[0].set_title('baseline correction')
+            ax[0].set_ylim(0.0,0.3)
+            ax[1].set_title('corrected raw data')
+            ax[2].set_title('melting enthalpy')
             #plt.ylim(0,0.1)
             #plt.xlim(0,30)
-            for i in range(4):
-                ax[i].set_xlim(0, max_time)
-                ax[i].set_xlabel('time in min')
-                ax[i].set_ylabel('DSC in W/g')
+            for i in range(2):
+                ax[i+1].set_xlim(0, max_time)
+                ax[i+1].set_xlabel('time in min')
+                ax[i+1].set_ylabel('DSC in W/g')
+            ax[0].set_xlabel('Temp./°C')
+            ax[0].set_xlim(min_temp, max_temp)
             plt.tight_layout()
             plt.show()
 
@@ -380,7 +477,7 @@ class ltdsc_measurement:
         return values_per_min/60
     
     def get_ice_mass( self, plot = False ):
-        if plot: fig, ax = plt.subplots(ncols=2, nrows=2, figsize=(15, 15)) 
+        if plot: fig, ax = plt.subplots(ncols=3, nrows=1, figsize=(15, 5)) 
         for i, measure_segment in enumerate(self.measure_segments):
             
             values_per_s   = self.get_values_per_s( self.thaw_data[i] )
@@ -393,62 +490,73 @@ class ltdsc_measurement:
             df_s = self.thaw_data[i][(self.thaw_data[i]['Temp./°C'] >= self.thaw_temp_range[i][0]) & (self.thaw_data[i]['Temp./°C'] <= self.thaw_temp_range[i][1])].copy()
             
             df_s['ice mass cumsum/(g/g)'] = df_s['ice mass/(mg/g)'].cumsum()/1000
-            df_s['ice mass cumsum/(g/g)'] = df_s['ice mass cumsum/(g/g)'] - df_s['ice mass cumsum/(g/g)'].min()
+            df_s['ice mass cumsum/(g/g)'] = df_s['ice mass cumsum/(g/g)'] - df_s['ice mass cumsum/(g/g)'].min() #make sure, that ice is never substracted
             self.ice_mass.append( df_s['ice mass cumsum/(g/g)'].max() )
-            print('  (auto) ice mass in segment {} between {} and {} °C: {:.1f} mg/g'.format(
-                measure_segment[1], 
-                self.thaw_temp_range[i][0], 
-                self.thaw_temp_range[i][1], 
-                self.ice_mass[i]*1000)
-            )
             
-            df_s[['Temp./°C','ice mass/(mg/g)','ice mass cumsum/(g/g)']].to_csv( os.path.dirname(self.filepath) + os.sep + '{}_ice_{}.csv'.format( self.filename, measure_segment[1] ), index=False )
+            df_s['ice volume/(ml/g)'] = df_s['ice mass/(mg/g)']/1000/df_s['ice density/(g/ccm)']
+            df_s['ice volume cumsum/(ml/g)'] = df_s['ice volume/(ml/g)'].cumsum()
+            df_s['ice volume cumsum/(ml/g)'] = df_s['ice volume cumsum/(ml/g)'] - df_s['ice volume cumsum/(ml/g)'].min() #make sure, that ice is never substracted
+            self.ice_vol.append( df_s['ice volume cumsum/(ml/g)'].max() )
+            # print('  (auto) ice mass in segment {} between {} and {} °C: {:.1f} mg/g'.format(
+            #     measure_segment[1], 
+            #     self.thaw_temp_range[i][0], 
+            #     self.thaw_temp_range[i][1], 
+            #     self.ice_mass[i]*1000)
+            # )
+            
+            df_s[['Temp./°C','ice mass/(mg/g)','ice mass cumsum/(g/g)','ice volume/(ml/g)','ice volume cumsum/(ml/g)']].to_csv( os.path.dirname(self.filepath) + os.sep + '{}_ice_{}.csv'.format( self.filename, measure_segment[1] ), index=False )
             
             # manual baseline correction
-            self.thaw_data[i]['ice mass man_corr/(mg/g)'] = (self.thaw_data[i]['DSC/(mW/mg) man_corr']/values_per_s)*1000/self.thaw_data[i]['melting enthalpy/(J/g)']
+            #self.thaw_data[i]['ice mass man_corr/(mg/g)'] = (self.thaw_data[i]['DSC/(mW/mg) man_corr']/values_per_s)*1000/self.thaw_data[i]['melting enthalpy/(J/g)']
             
-            df_s2 = self.thaw_data[i][(self.thaw_data[i]['Temp./°C'] >= self.T_range[0][0]) & (self.thaw_data[i]['Temp./°C'] <= self.T_range[1][1])].copy()
+            #df_s2 = self.thaw_data[i][(self.thaw_data[i]['Temp./°C'] >= self.T_range[0][0]) & (self.thaw_data[i]['Temp./°C'] <= self.T_range[1][1])].copy()
             
-            df_s2['ice mass cumsum/(g/g)'] = df_s2['ice mass man_corr/(mg/g)'].cumsum()/1000
+            #df_s2['ice mass cumsum/(g/g)'] = df_s2['ice mass man_corr/(mg/g)'].cumsum()/1000
             #df_s2['ice mass cumsum/(g/g)'] = df_s2['ice mass cumsum/(g/g)'] - df_s2['ice mass cumsum/(g/g)'].min()
-            self.ice_mass_man.append( df_s2['ice mass cumsum/(g/g)'].max() )
+            #self.ice_mass_man.append( df_s2['ice mass cumsum/(g/g)'].max() )
             
-            print('  (manual) ice mass in segment {} between {} to {} and {} to {} °C: {:.1f} mg/g'.format(
+            print('  (manual) ice mass/volume in segment {:02d} between {} to {} and {} to {} °C: {:.1f} mg/g ; {:.1f} µl/g'.format(
                 measure_segment[1], 
                 self.T_range[0][0],
                 self.T_range[0][1],
                 self.T_range[1][0],
                 self.T_range[1][1], 
-                self.ice_mass_man[i]*1000)
+                self.ice_mass[i]*1000,
+                self.ice_vol[i]*1000)
             )
             
-            df_s2[['Temp./°C','ice mass/(mg/g)','ice mass cumsum/(g/g)']].to_csv( os.path.dirname(self.filepath) + os.sep + '{}_ice_man_{}.csv'.format( self.filename, measure_segment[1] ), index=False )
+            #df_s2[['Temp./°C','ice mass/(mg/g)','ice mass cumsum/(g/g)']].to_csv( os.path.dirname(self.filepath) + os.sep + '{}_ice_man_{}.csv'.format( self.filename, measure_segment[1] ), index=False )
             
             if plot:
-                ax[0,0].axhline(y=0, color='grey', linestyle='-')
-                ax[1,0].axhline(y=0, color='grey', linestyle='-')
-                ax[0,1].axhline(y=0, color='grey', linestyle='-')
-                ax[1,1].axhline(y=0, color='grey', linestyle='-')
+                ax[0].axhline(y=0, color='grey', linestyle='-')
+                ax[1].axhline(y=0, color='grey', linestyle='-')
+                #ax[0,1].axhline(y=0, color='grey', linestyle='-')
+                #ax[1,1].axhline(y=0, color='grey', linestyle='-')
                 # automatic baseline correction
-                self.thaw_data[i].plot(x='Temp./°C', y='ice mass/(mg/g)',          ax=ax[0,0], label="segment {} (auto)".format( measure_segment[1] ))
-                df_s.plot(             x='Temp./°C', y='ice mass cumsum/(g/g)',    ax=ax[0,1], label="segment {} (auto)".format( measure_segment[1] ))
+                self.thaw_data[i].plot(x='Temp./°C', y='ice mass/(mg/g)',          ax=ax[0], label="segment {}".format( measure_segment[1] ))
+                df_s.plot(             x='Temp./°C', y='ice mass cumsum/(g/g)',    ax=ax[1], label="segment {}".format( measure_segment[1] ))
+                df_s.plot(             x='Temp./°C', y='ice volume cumsum/(ml/g)',    ax=ax[2], label="segment {}".format( measure_segment[1] ))
                 
                 # manual baseline correction
-                self.thaw_data[i].plot(x='Temp./°C', y='ice mass man_corr/(mg/g)',          ax=ax[1,0], label="segment {} (manual)".format( measure_segment[1] ))
-                df_s2.plot(            x='Temp./°C', y='ice mass cumsum/(g/g)',    ax=ax[1,1], label="segment {} (manual)".format( measure_segment[1] ))
+                #self.thaw_data[i].plot(x='Temp./°C', y='ice mass man_corr/(mg/g)',          ax=ax[1,0], label="segment {} (manual)".format( measure_segment[1] ))
+                #df_s2.plot(            x='Temp./°C', y='ice mass cumsum/(g/g)',    ax=ax[1,1], label="segment {} (manual)".format( measure_segment[1] ))
                 #df_s.plot(             x='pore radius in nm', y='ice mass/(mg/g)', ax=ax[2], label="segment {}".format( measure_segment[1] ))
                 #df_s.plot(             x='pore radius in nm', y='ice mass cumsum/(g/g)', ax=ax[2], label="segment {} cs".format( measure_segment[1] ))
                 #print(df_s[['pore radius in nm', 'ice mass/(mg/g)']])
                 
          
         if plot: 
-            ax[0,0].set_title('differential ice mass')
-            ax[0,0].set_xlabel('temperature in °C')
-            ax[0,0].set_ylabel('ice mass in mg/g')
+            ax[0].set_title('differential ice mass')
+            ax[0].set_xlabel('temperature in °C')
+            ax[0].set_ylabel('ice mass in mg/g')
             
-            ax[0,1].set_title('cumulative ice mass')
-            ax[0,1].set_xlabel('temperature in °C')
-            ax[0,1].set_ylabel('ice mass cumsum in g/g')
+            ax[1].set_title('cumulative ice mass')
+            ax[1].set_xlabel('temperature in °C')
+            ax[1].set_ylabel('ice mass cumsum in g/g')
+            
+            ax[1].set_title('cumulative ice volume')
+            ax[1].set_xlabel('temperature in °C')
+            ax[1].set_ylabel('ice volume cumsum in ml/g')
             
             """ax[2].set_title('differential ice mass / pore radius')
             ax[2].set_xlabel('pore radius in nm')
@@ -460,7 +568,7 @@ class ltdsc_measurement:
             print('  ice mass difference: {:.2f} mg/g'.format((self.ice_mass[1]-self.ice_mass[0])*1000))
 
     def plot_pore_heat( self, plot = False ):
-        if plot: fig, ax = plt.subplots(ncols=2, figsize=(15, 5)) 
+        if plot: fig, ax = plt.subplots(ncols=2, figsize=(10, 5)) 
         for k, measure_segment in enumerate(self.measure_segments):
             for i in [0,1]:
                 df_s = self.raw_data[(self.raw_data['Segment'] == measure_segment[0])]
@@ -499,6 +607,7 @@ class ltdsc_measurement:
         self.columns   = []
         self.thaw_data = []
         self.ice_mass  = []
+        self.ice_vol   = []
         self.ice_mass_man = []
         if T_range is not None: self.T_range = T_range
             
